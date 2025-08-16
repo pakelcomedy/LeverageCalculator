@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Leverage Calculator — Simple (with exchange defaults)</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Leverage Calculator</h1>    
+  </header>
+
+  <main class="container">
+    <section class="panel form-panel">
+      <h2>Input Trade</h2>
+
+      <!-- Exchange selection: memilih exchange akan mengisi default fee/funding -->
+      <div class="row">
+        <label>Exchange
+          <select id="exchangeSelect" aria-label="Pilih exchange">
+            <option value="binance">Binance (default)</option>
+            <option value="bybit">Bybit</option>
+            <option value="okx">OKX</option>
+          </select>
+        </label>
+
+        <label>Nama Koin
+          <input id="coinName" type="text" placeholder="BTC / ETH / SOL" />
+        </label>
+      </div>
+
+      <div class="row">
+        <label>Arah Posisi
+          <select id="positionSide">
+            <option value="long">Long</option>
+            <option value="short">Short</option>
+          </select>
+        </label>
+
+        <label>Modal (Collateral)
+          <input id="margin" type="number" min="0" step="any" placeholder="30" />
+        </label>
+      </div>
+
+      <div class="row">
+        <label>Leverage
+          <input id="leverage" type="number" min="1" step="1" value="10" />
+        </label>
+
+        <label>Harga Entry
+          <input id="entryPrice" type="number" min="0" step="any" placeholder="0.1245" />
+        </label>
+      </div>
+
+      <!-- fee fields are readonly & auto-filled from exchange defaults -->
+      <div class="row">
+        <label>Maker Fee (auto)
+          <input id="makerFeeDisplay" type="text" readonly />
+        </label>
+        <label>Taker Fee (auto)
+          <input id="takerFeeDisplay" type="text" readonly />
+        </label>
+      </div>
+
+      <!-- Hidden inputs to store numeric fee values for script consumption (percent values) -->
+      <input id="makerFeePct" type="hidden" value="" />
+      <input id="takerFeePct" type="hidden" value="" />
+
+      <!-- Funding: removed manual funding rate input.
+           Instead user provides how long they hold (duration). -->
+      <div class="row">
+        <label>Hold duration
+          <div style="display:flex;gap:8px;">
+            <input id="holdDuration" type="number" min="0" step="any" value="24" />
+            <select id="holdUnit">
+              <option value="hours">Hours</option>
+              <option value="days">Days</option>
+            </select>
+          </div>
+        </label>
+
+        <label>Funding interval (info)
+          <input id="fundIntervalInfo" type="text" readonly />
+        </label>
+      </div>
+
+      <div id="targetsWrapper">
+        <label>Target Price(s)
+          <div class="targets">
+            <input class="targetInput" type="number" step="any" placeholder="0.13" />
+          </div>
+        </label>
+        <div class="target-actions">
+          <button id="addTarget" type="button">+ Tambah Target</button>
+          <button id="clearTargets" type="button">Reset Targets</button>
+        </div>
+      </div>
+
+      <label>Catatan
+        <textarea id="note" rows="3" placeholder="Catatan trade..."></textarea>
+      </label>
+
+      <div class="row actions">
+        <button id="calculateBtn">Hitung & Simpan</button>
+        <button id="resetBtn" type="button">Reset Form</button>
+      </div>
+
+      <small style="display:block;margin-top:8px;color:#666;font-size:13px">
+        Default fees/funding berasal dari dokumen resmi exchange (lihat catatan di bawah). Funding yang dipakai di kalkulasi = baseline interest per interval × jumlah interval (tidak termasuk premium index yang fluktuatif).
+      </small>
+    </section>
+
+    <section class="panel output-panel">
+      <h2>Hasil Perhitungan</h2>
+      <div id="resultSummary" class="card">
+        <div><strong>Exchange:</strong> <span id="resExchange">-</span></div>
+        <div><strong>Notional:</strong> <span id="notional">-</span></div>
+        <div><strong>Qty:</strong> <span id="qty">-</span></div>
+        <div><strong>Liquidation Price:</strong> <span id="liqPrice">-</span></div>
+        <div><strong>Equity @ target (example first):</strong> <span id="equityExample">-</span></div>
+        <div><strong>Funding cost (total):</strong> <span id="fundingCost">-</span></div>
+      </div>
+
+      <h3>Hasil per Target</h3>
+      <div id="targetsResult" class="card">
+        <table id="targetsTable">
+          <thead>
+            <tr><th>Target</th><th>P/L</th><th>Equity</th><th>Fee</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <h3>Visual</h3>
+      <div id="miniChart" class="card chart"></div>
+
+      <h3>History (LocalStorage)</h3>
+      <div class="card history">
+        <div class="history-actions">
+          <button id="exportCsv">Export CSV</button>
+          <button id="clearHistory">Clear History</button>
+        </div>
+        <table id="historyTable">
+          <thead><tr><th>Waktu</th><th>Koin</th><th>Entry</th><th>Leverage</th><th>Side</th><th>LIQ</th><th>Equity (first)</th><th>Aksi</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <small>Built local — no external assets. Default formulas assume isolated margin and maintenance margin input.</small>
+  </footer>
+
+  <!-- ---------------------------
+       Exchange defaults (data only)
+       script.js should read this JSON (no external fetch required)
+       --------------------------- -->
+  <script type="application/json" id="exchangeData">
+  {
+    "binance": {
+      "label": "Binance (USDT/COIN-M futures)",
+      "maker_pct": 0.018,
+      "taker_pct": 0.045,
+      "funding_interval_hours": 8,
+      "interest_daily_pct": 0.03
+    },
+    "bybit": {
+      "label": "Bybit (Perpetual & Futures)",
+      "maker_pct": 0.02,
+      "taker_pct": 0.055,
+      "funding_interval_hours": 8,
+      "interest_daily_pct": 0.03
+    },
+    "okx": {
+      "label": "OKX (Derivatives)",
+      "maker_pct": 0.02,
+      "taker_pct": 0.05,
+      "funding_interval_hours": 8,
+      "interest_daily_pct": 0.03
+    }
+  }
+  </script>
+
+  <!-- script.js will be loaded separately (kept external per permintaan) -->
+  <script src="script.js" defer></script>
+</body>
+</html>
